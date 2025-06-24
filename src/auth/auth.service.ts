@@ -253,5 +253,20 @@ export class AuthService {
             bearer: token
         }
     }
-
+  async genrateForogotPasswordLink(email:string){
+        const user = await this.prismaService.user.findUnique({where:{email}})
+        if(!user) throw new BadRequestException("user not found");
+        const token = await this.prismaService.editUserProfileToken.create({
+            data:{
+                code:genOtp(),
+                identifier_id:user.id,
+                expires: getVerificationExpireDate()
+            }
+        });
+        //TODO SEND EMAIL
+        return {
+            id:token.id,
+            type:token.type
+        }
+    }
 }
