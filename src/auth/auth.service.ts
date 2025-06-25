@@ -220,11 +220,13 @@ export class AuthService {
             }
         });
         if(!user_info)throw new NotFoundException("user not found");
+    
         const {id,name,email,image,phone_number,createdAt,country_code,isPhoneNumberVerified,isVerified,...rest} = user_info;
         return {
             id,name,email,image,phone_number,createdAt,country_code,
             isPhoneNumberVerified:!!isPhoneNumberVerified,
-            isVerified:!!isVerified
+            isVerified:!!isVerified,
+            oauth:!(!!user_info.password)
         }
     }
     async refreshToken(user:any,ip:string, userAgent:string){
@@ -274,7 +276,7 @@ export class AuthService {
     }
     async logoutUser(token:string,user:string){
         try {
-             const del = await this.prismaService.session.delete({
+            await this.prismaService.session.delete({
             where:{id:token, userId:user}
         });
         return {
