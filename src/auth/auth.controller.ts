@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Redirect, Request, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, NotFoundException, Param, ParseUUIDPipe, Post, Query, Request, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignUpDto } from './dto/sign-up.dto';
 import { IpInfo } from './decorators/ip-info.decorator';
@@ -11,6 +11,7 @@ import { UserInfo } from './decorators/user.decorator';
 import { LoginThrottlerGuard } from './guards/login-throttle.guard';
 import { PublicAuthRoute } from './guards/auth-route.guard';
 import { Response } from 'express';
+import { OAuthFrontEndCallback } from './guards/oauth-token.guard';
 
 
 @Controller('auth')
@@ -76,6 +77,12 @@ res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
     async githubcallback(@Query('code') code:string, @IpInfo() ip:string, @UserAgent() agent:string,@Res() res :Response){
         const url = await this.authService.oauthGithub(code, agent,ip);
         if(url) res.redirect(url);
+    }
+    @UseGuards(OAuthFrontEndCallback)
+    @Get('/oauth/front-end/callback')
+    async oauthFronEndCallback(@Request() req){
+       if(!req.oauth) throw new NotFoundException("invalid code");
+        return req.oauth
     }
 
 }
