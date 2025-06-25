@@ -54,5 +54,10 @@ export class AuthController {
         
         return this.authService.genrateForogotPasswordLink(body.email)
     }
+    @UseGuards(JWTGuard)
+    @Get('/sign-out')
+    async signOut(@UserInfo() user){
+        return this.authService.logoutUser(user.token, user.id)
+    }
 
 }

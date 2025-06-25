@@ -3,7 +3,7 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { SignUpDto } from './dto/sign-up.dto';
 import { genOtp, getSessionExpireDate, getVerificationExpireDate, hashPassword, verifyPassword } from 'src/libs/utils';
 import { VerifiyAccountDto } from './dto/verify-accound.dto';
-import { User, VerificationType } from '@prisma/client';
+import { EditAccess, User, VerificationType } from '@prisma/client';
 import { SignInDto } from './dto/sign-in.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -61,9 +61,7 @@ export class AuthService {
                 }
             });
             await this.sendVerificationCode(newUser)
-            return {
-                message:'please verify your account using the link sent to your '+newUser.email? 'email':'phone number'
-            }
+             throw new BadRequestException(`please verify your account using the link sent to your newUser.email? ${email ? 'email':'phone number'}`)
         }
         throw new ConflictException(`user already exisits with ${phone_number===userExists?.phone_number ? 'this phone number': 'with this email'}`)
     }
@@ -72,13 +70,14 @@ export class AuthService {
         const token = await this.prismaService.verificationToken.findFirst({
             where:{
                 id,
-                code,
                 expires:{
                     gte:new Date()
                 }
             }
         });
+   
         if(!token) throw new BadRequestException("invalid token id or token expired");
+        if(token.code!==code) throw new BadRequestException("invalid code");
        try {
         const payload =  token.type==VerificationType.PHONE ? 
                   {  isPhoneNumberVerified: new Date()}
@@ -130,7 +129,7 @@ export class AuthService {
             const isVerified = userExists.email ? userExists.isVerified : userExists.isPhoneNumberVerified;
             if(!isVerified){
                 await this.sendVerificationCode(userExists)
-                throw  new BadRequestException('please verify your account using the link sent to your '+userExists.email? 'email':'phone number')
+                 throw new BadRequestException(`please verify your account using the link sent to your  ${email ? 'email':'phone number'}`)
             }
             const session_token = await this.prismaService.session.create({
                 data:{
@@ -144,7 +143,8 @@ export class AuthService {
             const token = await this.jwtService.sign({id:userExists.id, email:userExists.email,image:userExists.image,token:session_token.id})
             return {
                 message:'login successfull',
-                bearer:token
+                bearer:token,
+                expires:  session_token.expires
             }
             
         }
@@ -156,11 +156,11 @@ export class AuthService {
         const token = await this.prismaService.editUserProfileToken.findFirst({
             where:{
                 id,
-                code,
                 expires:{gte:new Date()}
             }
         });
         if(!token) throw new BadRequestException("invalid token or code");
+        if(code!==token.code || token.type!==EditAccess.PASSWORD)  throw new BadRequestException("invalid code");
         const hashed_password = await hashPassword(password);
         await this.prismaService.user.update({
             where:{
@@ -198,7 +198,6 @@ export class AuthService {
         });
         //TODO SEND EMAIL
         return {
-            id:token.id,
             type:token.type
         }
     }
@@ -269,4 +268,17 @@ export class AuthService {
             type:token.type
         }
     }
+    async logoutUser(token:string,user:string){
+        try {
+             const del = await this.prismaService.session.delete({
+            where:{id:token, userId:user}
+        });
+        return {
+            message: 'logout sucessfull'
+        }
+        } catch (error) {
+            console.log(error,'logout error');
+            throw new InternalServerErrorException("internal server error")
+        }
+    }   
 }
