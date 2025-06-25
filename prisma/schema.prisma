@@ -20,12 +20,14 @@ model User {
   image                 String?   @default("placeholder.webp")
   image_public_id       String?
   isVerified            DateTime?
-  password               String
+  password               String?
   phone_number          String?  @unique
   isPhoneNumberVerified DateTime?
-  OAuths                OAuth[]
+  OAuths                OAuth?
   sessions              Session[]
   isAdmin               Admin?
+  files                 File[]
+  folders               Folder[]
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   createdByIp           String?
@@ -59,7 +61,7 @@ model Admin {
 
 model OAuth {
   id     String @id @default(uuid()) @db.Uuid
-  userId String @db.Uuid
+  userId String @db.Uuid @unique
 
   provider          Providers
   providerAccountId String
@@ -124,4 +126,42 @@ model EditUserProfileToken{
   updatedAt  DateTime @updatedAt
 
   @@index([identifier_id])
+}
+
+model File{
+    id         String   @id @default(uuid()) @db.Uuid
+    originalName String
+    name          String
+    media_url     String
+    media_url_expiresAt DateTime?
+    folder_id     String @db.Uuid
+    folder        Folder @relation(fields: [folder_id], references: [id],onDelete: Cascade)
+    type        String
+    size        Int
+    bucket_key  String
+    isPublic    DateTime?
+    user_id     String @db.Uuid
+    User        User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+      createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model Folder {
+    id         String   @id @default(uuid()) @db.Uuid
+    originalName String
+    type        String
+    size        Int
+    bucked_key  String
+    files       File[]
+    isPublic    DateTime?
+    user_id     String @db.Uuid
+    User        User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+      createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+model OauthLoginTemp {
+  id         String   @id @default(uuid()) @db.Uuid
+  token      String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
 }

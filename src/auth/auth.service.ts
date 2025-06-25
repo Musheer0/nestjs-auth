@@ -1,9 +1,9 @@
-import { BadRequestException, Body, ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException} from '@nestjs/common';
+import { BadRequestException, Body, ConflictException, Injectable, InternalServerErrorException, Logger, NotFoundException, Redirect, UnauthorizedException} from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { SignUpDto } from './dto/sign-up.dto';
 import { genOtp, getSessionExpireDate, getVerificationExpireDate, hashPassword, verifyPassword } from 'src/libs/utils';
 import { VerifiyAccountDto } from './dto/verify-accound.dto';
-import { EditAccess, User, VerificationType } from '@prisma/client';
+import { EditAccess, Providers, User, VerificationType } from '@prisma/client';
 import { SignInDto } from './dto/sign-in.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ResetPasswordDto } from './dto/reset-password.dto';
@@ -29,7 +29,20 @@ export class AuthService {
     private async userExisits(id:string){
         return this.prismaService.user.findUnique({where:{id}})
     }
-    async createUser (data:SignUpDto,ip?:string){
+    private async GenerateSessionToken(user:User, ip:string, userAgent:string){
+          const session_token = await this.prismaService.session.create({
+                data:{
+                    userId:user.id,
+                    ip,
+                    user_agent:userAgent,
+                    expires:getSessionExpireDate(),
+                    location: 'test location'
+                }
+            });
+            const token = await this.jwtService.sign({id:user.id, email:user.email,image:user.image,token:session_token.id});
+            return {token, expires:session_token.expires}
+    }
+    async createUser (data:SignUpDto,agent:string,ip?:string){
         if(!ip) throw new BadRequestException("invalid request");
         const {email,name,password,phone_number} = data; 
         
@@ -56,7 +69,7 @@ export class AuthService {
                     password:hashed_password,
                     phone_number,
                     createdByIp:ip,
-                    createdByUserAgent: 'test agent',
+                    createdByUserAgent: agent,
                     country_code: 'test'
                 }
             });
@@ -123,28 +136,19 @@ export class AuthService {
                 email
             }
         });
-        if(userExists){
-            const isCorrectPassword = await verifyPassword(userExists.password, password);
+        if(userExists && userExists.password){
+            const isCorrectPassword = await verifyPassword(userExists.password!, password);
             if(!isCorrectPassword)  throw  new BadRequestException('invalid credentials')
             const isVerified = userExists.email ? userExists.isVerified : userExists.isPhoneNumberVerified;
             if(!isVerified){
                 await this.sendVerificationCode(userExists)
                  throw new BadRequestException(`please verify your account using the link sent to your  ${email ? 'email':'phone number'}`)
             }
-            const session_token = await this.prismaService.session.create({
-                data:{
-                    userId:userExists.id,
-                    ip,
-                    user_agent:userAgent,
-                    expires:getSessionExpireDate(),
-                    location: 'test location'
-                }
-            });
-            const token = await this.jwtService.sign({id:userExists.id, email:userExists.email,image:userExists.image,token:session_token.id})
+           const {token,expires} = await this.GenerateSessionToken(userExists,ip,userAgent)
             return {
                 message:'login successfull',
                 bearer:token,
-                expires:  session_token.expires
+                expires: expires
             }
             
         }
@@ -281,4 +285,118 @@ export class AuthService {
             throw new InternalServerErrorException("internal server error")
         }
     }   
+    async oauthGithub(code: string,userAgent:string, ip:string) {
+  const tokenUrl = process.env.GITHUB_ACCESS_TOKEN!;
+  const userUrl = process.env.GITHUB_USER_INFO!;
+
+  // Step 1: Exchange code for access_token
+  const body = {
+    client_id: process.env.GITHUB_CLIENT_ID!,
+    client_secret: process.env.GITHUB_CLIENT_SECRET!,
+    code,
+    redirect_uri: process.env.GITHUB_CALLBACK_URL!,
+  };
+
+  const tokenRes = await fetch(tokenUrl, {
+    method: 'POST',
+    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    },
+  });
+
+  if (!tokenRes.ok) throw new UnauthorizedException('Token exchange failed');
+
+  const tokenData = await tokenRes.json();
+  const accessToken = tokenData.access_token;
+   
+  // Step 2: Get public profile data
+  const userRes = await fetch(userUrl, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'User-Agent': 'NestDrive',
+      Accept: 'application/vnd.github+json',
+    },
+  });
+
+  if (!userRes.ok) throw new UnauthorizedException('User fetch failed');
+
+  const user = await userRes.json();
+
+  // Step 3: Get actual email from /user/emails
+  const emailRes = await fetch('https://api.github.com/user/emails', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'User-Agent': 'NestDrive',
+      Accept: 'application/vnd.github+json',
+    },
+  });
+
+  const emails = await emailRes.json();
+  const email = emails.find((e: any) => e.primary && e.verified)?.email ?? null;
+  const final_user = {
+    id: user.id.toLocaleString(),
+    username: user.login as string,
+    name: user.name as string || user.login as string,
+    avatar: user.avatar_url as string,
+    email:email as string, // <- ✅ now never null if it exists
+  };
+  const ExistingOAuth = await this.prismaService.oAuth.findFirst({
+    where:{
+        providerAccountId: final_user.id,
+        provider: Providers.GITHUB
+    }
+  });
+  const ExisitingUser = await this.prismaService.user.findUnique({
+    where:{email:final_user.email}
+  });
+  if(ExisitingUser && ExistingOAuth) {
+       const {token,expires} = await this.GenerateSessionToken(ExisitingUser,ip,userAgent);
+       const temp_token = await this.prismaService.oauthLoginTemp.create({
+        data:{
+            token,
+            expiresAt:expires
+        }
+       });
+              console.log(`${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`)
+
+       return `${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`
+            
+       
+  }
+  if(!ExistingOAuth && ExisitingUser){
+    throw new UnauthorizedException("user is not linked to github")
+  }
+   if(!ExistingOAuth && !ExisitingUser){
+    const new_user = await this.prismaService.user.create({
+        data:{
+            name:final_user.name ,
+            image: final_user.avatar,
+            email:final_user.email,
+            createdByIp:ip,
+            createdByUserAgent:userAgent,
+
+        }
+    });
+    await this.prismaService.oAuth.create({
+        data:{
+            provider:Providers.GITHUB,
+            providerAccountId:final_user.id,
+            userId:new_user.id
+        }
+    });
+  const {token,expires} = await this.GenerateSessionToken(new_user,ip,userAgent);
+       const temp_token = await this.prismaService.oauthLoginTemp.create({
+        data:{
+            token,
+            expiresAt:expires
+        }
+       });
+       console.log(`${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`)
+       return `${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`
+  }
+
+}
+
 }

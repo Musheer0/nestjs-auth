@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query, Redirect, Request, Res, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { SignUpDto } from './dto/sign-up.dto';
 import { IpInfo } from './decorators/ip-info.decorator';
@@ -9,6 +9,8 @@ import { JWTGuard } from './guards/jwt.guard';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UserInfo } from './decorators/user.decorator';
 import { LoginThrottlerGuard } from './guards/login-throttle.guard';
+import { PublicAuthRoute } from './guards/auth-route.guard';
+import { Response } from 'express';
 
 
 @Controller('auth')
@@ -16,8 +18,8 @@ export class AuthController {
     constructor(private readonly authService:AuthService){}
 
     @Post('/sign-up')
-    async SignUp(@Body() body:SignUpDto,@IpInfo()  ip:string){
-        return this.authService.createUser(body,ip)
+    async SignUp(@Body() body:SignUpDto,@IpInfo()  ip:string,@UserAgent() agent:string){
+        return this.authService.createUser(body,ip,agent)
     }
     @Post('/verify/:id')
     async verifyUser(@Param('id', new ParseUUIDPipe()) id:string,@Body() body:VerifiyAccountDto){
@@ -58,6 +60,22 @@ export class AuthController {
     @Get('/sign-out')
     async signOut(@UserInfo() user){
         return this.authService.logoutUser(user.token, user.id)
+    }
+    @Get('/oauth/github')
+    async githubsend(@Res() res:Response){
+
+const params = new URLSearchParams({
+  client_id: process.env.GITHUB_CLIENT_ID!,
+  redirect_uri: process.env.GITHUB_CALLBACK_URL!,
+  scope: 'user',
+});
+res.redirect(`https://github.com/login/oauth/authorize?${params.toString()}`);
+    }
+      @UseGuards(PublicAuthRoute)
+    @Get('/oauth/github/callback')
+    async githubcallback(@Query('code') code:string, @IpInfo() ip:string, @UserAgent() agent:string,@Res() res :Response){
+        const url = await this.authService.oauthGithub(code, agent,ip);
+        if(url) res.redirect(url);
     }
 
 }
