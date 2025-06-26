@@ -7,6 +7,11 @@ export class OAuthFrontEndCallback implements CanActivate {
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
+  //   const forwarded = req.headers['x-forwarded-for'];
+  //  const ip =
+  //     typeof forwarded === 'string'
+  //       ? forwarded.split(',')[0].trim()
+  //       : req.socket?.remoteAddress;
 
     const authHeader = req.headers['authorization'];
 
@@ -15,13 +20,16 @@ export class OAuthFrontEndCallback implements CanActivate {
     }
 
     const token = authHeader.split('token ')[1];
-
+    
     const oauth = await this.prisma.oauthLoginTemp.findUnique({
       where: { id: token },
     });
 
     if (!oauth) return false;
     if (oauth.expiresAt < new Date()) return false;
+    await this.prisma.oauthLoginTemp.delete({
+      where:{id:oauth.id}
+    });
     req.oauth = {
       token: oauth.token,
       expires: oauth.expiresAt,

@@ -28,6 +28,8 @@ model User {
   isAdmin               Admin?
   files                 File[]
   folders               Folder[]
+  storage               Storage?
+  subscription          Subscription?
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
   createdByIp           String?
@@ -132,13 +134,15 @@ model File{
     id         String   @id @default(uuid()) @db.Uuid
     originalName String
     name          String
-    media_url     String
+    media_url     String?
     media_url_expiresAt DateTime?
-    folder_id     String @db.Uuid
-    folder        Folder @relation(fields: [folder_id], references: [id],onDelete: Cascade)
+    isUploaded    Boolean @default(false)
+    folder_id     String? @db.Uuid
+    folder        Folder? @relation(fields: [folder_id], references: [id],onDelete: Cascade)
+    storage_id  String @db.Uuid
+    storage     Storage @relation(references: [id], fields: [storage_id], onDelete: Cascade)
     type        String
     size        Int
-    bucket_key  String
     isPublic    DateTime?
     user_id     String @db.Uuid
     User        User @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -148,15 +152,13 @@ model File{
 
 model Folder {
     id         String   @id @default(uuid()) @db.Uuid
-    originalName String
-    type        String
-    size        Int
-    bucked_key  String
+    name       String
+    size        Int @default(0)
     files       File[]
     isPublic    DateTime?
     user_id     String @db.Uuid
     User        User @relation(fields: [user_id], references: [id], onDelete: Cascade)
-      createdAt  DateTime @default(now())
+  createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 }
 model OauthLoginTemp {
@@ -164,4 +166,21 @@ model OauthLoginTemp {
   token      String
   expiresAt  DateTime
   createdAt  DateTime @default(now())
+}
+
+model Storage{
+    id         String   @id @default(uuid()) @db.Uuid
+    user_id   String @db.Uuid @unique
+    User      User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+    storage_used  Int @default(0)
+    files     File[]
+    limit     Int @default(250000000)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+model Subscription{
+   id         String   @id @default(uuid()) @db.Uuid
+    user_id   String @db.Uuid @unique
+    User      User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
 }

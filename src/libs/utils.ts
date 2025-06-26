@@ -28,3 +28,12 @@ export const getIpInfo = async(ip:string)=>{
     return null
 }
 export const isSuperUser = (email:string)=>email===process.env.SUPER_USER
+
+export const STORAGE_LIMIT=262144000
+export const bytesToMB = (bytes) => bytes / 1048576;
+export const getExpiryBySize = (fileSizeInMB: number) => {
+  const speedInMBps = 0.5; // assume average network speed
+  const bufferTimeInSec = 10; // just in case
+  const uploadTime = fileSizeInMB / speedInMBps;
+  return Math.ceil(uploadTime + bufferTimeInSec);
+};

@@ -7,7 +7,7 @@ import { EditAccess, Providers, User, VerificationType } from '@prisma/client';
 import { SignInDto } from './dto/sign-in.dto';
 import { JwtService } from '@nestjs/jwt';
 import { ResetPasswordDto } from './dto/reset-password.dto';
-
+import argon2 from 'argon2'
 
 @Injectable()
 export class AuthService {
@@ -342,7 +342,7 @@ export class AuthService {
     username: user.login as string,
     name: user.name as string || user.login as string,
     avatar: user.avatar_url as string,
-    email:email as string, // <- ✅ now never null if it exists
+    email:email as string, 
   };
   const ExistingOAuth = await this.prismaService.oAuth.findFirst({
     where:{
@@ -378,6 +378,7 @@ export class AuthService {
             email:final_user.email,
             createdByIp:ip,
             createdByUserAgent:userAgent,
+            isVerified:new Date()
 
         }
     });
@@ -392,10 +393,11 @@ export class AuthService {
        const temp_token = await this.prismaService.oauthLoginTemp.create({
         data:{
             token,
-            expiresAt:expires
+            expiresAt:new Date(Date.now()+2*60*60*1000)
         }
        });
-       console.log(`${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`)
+       //TODO IMPROVE SECURITY
+    //    const hasked_token = await argon2.hash(temp_token.id,{secret: Buffer.from(ip)});
        return `${process.env.FRONT_END}/api/auth/oauth/session?token=${temp_token.id}`
   }
 
